@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naija MP4 to MP3 Converter & Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg.js/0.10.1/ffmpeg.min.js"></script>
+    <style>
+        body {
+            background-color: green;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 10px;
+            width: 90%;
+            border: none;
+            border-radius: 5px;
+        }
+
+        button {
+            background-color: white;
+            color: green;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: darkgreen;
+            color: white;
+        }
+
+        .animation-section {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .nigeria-flag {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(to right, green 33%, white 33%, white 66%, green 66%);
+            animation: spin 5s linear infinite;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .loader {
+            border: 5px solid white;
+            border-top: 5px solid transparent;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+            display: none;
+        }
+
+        #mp3Container, #editor {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Naija MP4 to MP3 Converter & Editor</h1>
+
+        <input type="text" id="videoUrl" placeholder="Enter YouTube MP4 URL">
+        <button onclick="convertMP4toMP3()">Convert to MP3</button>
+
+        <div class="loader" id="loader"></div>
+
+        <div id="mp3Container">
+            <h2>Download MP3</h2>
+            <audio id="audioPlayer" controls></audio>
+            <a id="downloadMP3" download="converted.mp3">
+                <button>Download MP3</button>
+            </a>
+        </div>
+
+        <div id="editor">
+            <h2>Trim MP3</h2>
+            <label>Start Time (seconds):</label>
+            <input type="number" id="startTime" min="0">
+            <label>End Time (seconds):</label>
+            <input type="number" id="endTime" min="0">
+            <button onclick="trimMP3()">Trim</button>
+            <button onclick="saveMP3()">Save</button>
+        </div>
+    </div>
+
+    <div class="animation-section">
+        <div class="nigeria-flag"></div>
+    </div>
+
+    <script>
+        async function convertMP4toMP3() {
+            const url = document.getElementById("videoUrl").value;
+            if (!url) return alert("Enter a valid YouTube MP4 URL!");
+
+            document.getElementById("loader").style.display = "block";
+
+            try {
+                const response = await fetch(`https://api.vevioz.com/api/button/mp3?url=${encodeURIComponent(url)}`);
+                if (!response.ok) throw new Error("Failed to fetch video");
+
+                const pageText = await response.text();
+                const mp3Url = extractMp3Url(pageText);
+                if (!mp3Url) throw new Error("MP3 URL not found");
+
+                document.getElementById("audioPlayer").src = mp3Url;
+                document.getElementById("downloadMP3").href = mp3Url;
+                document.getElementById("mp3Container").style.display = "block";
+                
+                // Stop loader only after MP3 is fully downloaded
+                document.getElementById("audioPlayer").onloadeddata = () => {
+                    document.getElementById("loader").style.display = "none";
+                    document.getElementById("editor").style.display = "block"; // Show trim section after download
+                };
+            } catch (err) {
+                alert("Error: " + err.message);
+                document.getElementById("loader").style.display = "none";
+            }
+        }
+
+        function extractMp3Url(html) {
+            const match = html.match(/href="(https:\/\/.*?\.mp3)"/);
+            return match ? match[1] : null;
+        }
+
+        async function trimMP3() {
+            const startTime = parseInt(document.getElementById("startTime").value, 10);
+            const endTime = parseInt(document.getElementById("endTime").value, 10);
+            const audioPlayer = document.getElementById("audioPlayer");
+
+            if (isNaN(startTime) || isNaN(endTime) || startTime >= endTime) {
+                alert("Invalid start or end time.");
+                return;
+            }
+
+            document.getElementById("loader").style.display = "block";
+
+            const response = await fetch(audioPlayer.src);
+            const arrayBuffer = await response.arrayBuffer();
+            const ffmpeg = await FFmpeg.createFFmpeg({ log: true });
+            await ffmpeg.load();
+            await ffmpeg.FS('writeFile', 'input.mp3', new Uint8Array(arrayBuffer));
+
+            await ffmpeg.run('-i', 'input.mp3', '-ss', `${startTime}`, '-to', `${endTime}`, '-c', 'copy', 'output.mp3');
+            const trimmedData = ffmpeg.FS('readFile', 'output.mp3');
+
+            const trimmedBlob = new Blob([trimmedData], { type: 'audio/mp3' });
+            const trimmedUrl = URL.createObjectURL(trimmedBlob);
+
+            document.getElementById("audioPlayer").src = trimmedUrl;
+            document.getElementById("downloadMP3").href = trimmedUrl;
+            document.getElementById("downloadMP3").download = "trimmed.mp3";
+
+            document.getElementById("loader").style.display = "none";
+        }
+
+        function saveMP3() {
+            const link = document.createElement("a");
+            link.href = document.getElementById("audioPlayer").src;
+            link.download = "final_audio.mp3";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+
+</body>
+</html>
